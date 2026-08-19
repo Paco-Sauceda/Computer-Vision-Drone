@@ -21,6 +21,17 @@ from ultralytics import YOLO
 EXTENSIONES = {".jpg", ".jpeg", ".png"}
 
 
+def _version_ultralytics() -> str:
+    """Se guarda en el JSON: sin esto, "corre esto y obtén 387 detecciones" no
+    es una promesa que se pueda cumplir dentro de seis meses."""
+    try:
+        from importlib.metadata import version
+
+        return version("ultralytics")
+    except Exception:
+        return "desconocida"
+
+
 def cargar_metricas(meta_path: Path) -> dict[str, dict]:
     """Devuelve {nombre_frame: métricas} desde output/frames_meta.json, si existe."""
     if not meta_path.exists():
@@ -34,6 +45,7 @@ def detectar(
     frames_dir: Path,
     modelo_path: str,
     conf: float,
+    imgsz: int,
     metricas: dict[str, dict],
     annotate_dir: Path | None,
 ) -> list[dict]:
@@ -44,6 +56,7 @@ def detectar(
     print(f"Modelo   : {modelo_path}")
     print(f"Frames   : {len(frames)} en {frames_dir}")
     print(f"Confianza: umbral {conf}")
+    print(f"imgsz    : {imgsz} (un frame 1920x1080 se reescala a ~{imgsz}x{round(imgsz*1080/1920)})")
 
     modelo = YOLO(modelo_path)
     if annotate_dir:
@@ -53,7 +66,7 @@ def detectar(
 
     for i, frame_path in enumerate(frames, start=1):
         # verbose=False porque si no, ultralytics imprime una línea por frame.
-        pred = modelo.predict(source=str(frame_path), conf=conf, verbose=False)[0]
+        pred = modelo.predict(source=str(frame_path), conf=conf, imgsz=imgsz, verbose=False)[0]
 
         detecciones = []
         for box in pred.boxes:
@@ -114,9 +127,26 @@ def main():
         "--out", type=Path, default=Path("output/detections.json"), help="JSON de salida"
     )
     p.add_argument(
+        "--imgsz",
+        type=int,
+        default=640,
+        help=(
+            "Resolución de inferencia (default: 640, el default de ultralytics). "
+            "Un frame 1920x1080 entra al modelo reescalado a ~640x360: un noveno "
+            "del área. Subirlo a 1280 es el experimento controlado más barato "
+            "que tiene este repo."
+        ),
+    )
+    p.add_argument(
         "--annotate",
         action="store_true",
-        help="Guardar frames con bounding boxes en output/annotated/ (para el README)",
+        help="Guardar frames con bounding boxes (ver --annotate-dir)",
+    )
+    p.add_argument(
+        "--annotate-dir",
+        type=Path,
+        default=None,
+        help="Carpeta destino de los frames anotados (default: output/annotated/)",
     )
     args = p.parse_args()
 
@@ -124,8 +154,8 @@ def main():
         raise SystemExit(f"No existe la carpeta de frames: {args.frames}")
 
     metricas = cargar_metricas(args.meta)
-    annotate_dir = Path("output/annotated") if args.annotate else None
-    resultados = detectar(args.frames, args.modelo, args.conf, metricas, annotate_dir)
+    annotate_dir = args.annotate_dir or (Path("output/annotated") if args.annotate else None)
+    resultados = detectar(args.frames, args.modelo, args.conf, args.imgsz, metricas, annotate_dir)
 
     total = sum(r["n_detecciones"] for r in resultados)
     vacios = sum(1 for r in resultados if r["n_detecciones"] == 0)
@@ -134,6 +164,8 @@ def main():
     payload = {
         "modelo": args.modelo,
         "umbral_conf": args.conf,
+        "imgsz": args.imgsz,
+        "ultralytics_version": _version_ultralytics(),
         "n_frames": len(resultados),
         "n_detecciones_total": total,
         "frames_sin_deteccion": vacios,

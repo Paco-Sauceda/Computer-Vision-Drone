@@ -15,44 +15,54 @@ import json
 from pathlib import Path
 
 import cv2
+import numpy as np
 
 
-def brillo_medio(frame) -> float:
-    """Luminancia media del frame (0-255).
+def metricas_opticas(frame, umbral_quemado: int = 250) -> dict:
+    """Brillo, luminancia, nitidez y clipping — en una sola conversión de color.
 
-    Se usa el canal V de HSV en lugar de un promedio RGB: V es max(R,G,B), que
-    es lo que satura primero en el sensor. Un cielo quemado se detecta antes con
-    V que con un promedio de los tres canales, donde el azul lo arrastra hacia
-    abajo y disimula el clipping.
+    Se reportan DOS medidas de brillo porque no son lo mismo y sirven para
+    preguntas distintas:
+
+    - `brillo_medio` es la media del canal V de HSV, o sea max(R,G,B). NO es
+      luminancia: no pondera por respuesta espectral y un rojo saturado da
+      V=255 igual que el blanco. Se usa a propósito para el clipping, porque V
+      es el canal que satura primero en el sensor: un cielo quemado se detecta
+      antes con V que con un promedio RGB, donde el azul lo arrastra hacia
+      abajo y disimula el blowout.
+    - `luminancia_media` es Rec.601 (0.299R + 0.587G + 0.114B), que es lo que
+      corresponde para hablar de *exposición*. V está sistemáticamente sesgado
+      hacia arriba y es ciego al color.
+
+    `nitidez` es la varianza del laplaciano: responde a bordes, y cae cuando el
+    drone gira y el motion blur los suaviza. Es un número RELATIVO — depende de
+    resolución, lente y contenido de la escena — así que solo tiene sentido
+    compararlo entre frames del mismo clip. analyze.py normaliza por clip
+    justamente por esto.
+
+    Los percentiles y `pct_sombras` existen porque la media es la estadística
+    equivocada para una escena de alto rango dinámico: un frame puede tener
+    media 110 (casi gris medio) con el cielo quemado y el primer plano en
+    sombra irrecuperable. El histograma lo dice; la media lo esconde.
     """
-    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-    return float(hsv[:, :, 2].mean())
+    v = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)[:, :, 2]
+    gris = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)  # Rec.601
+    p5, p50, p95 = (float(x) for x in np.percentile(v, [5, 50, 95]))
+
+    return {
+        "brillo_medio": round(float(v.mean()), 2),
+        "luminancia_media": round(float(gris.mean()), 2),
+        "nitidez": round(float(cv2.Laplacian(gris, cv2.CV_64F).var()), 2),
+        "pct_quemado": round(float((v >= umbral_quemado).sum() / v.size * 100), 2),
+        "pct_sombras": round(float((v <= 16).sum() / v.size * 100), 2),
+        "v_p5": round(p5, 1),
+        "v_p50": round(p50, 1),
+        "v_p95": round(p95, 1),
+        "rango_dinamico": round(p95 - p5, 1),
+    }
 
 
-def nitidez(frame) -> float:
-    """Varianza del laplaciano — proxy de nitidez.
-
-    El laplaciano responde a cambios bruscos de intensidad, o sea bordes. Si el
-    drone giraba, el motion blur suaviza los bordes y la varianza cae. Es un
-    número relativo, no absoluto: solo compara frames del mismo video, misma
-    resolución y mismo lente.
-    """
-    gris = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    return float(cv2.Laplacian(gris, cv2.CV_64F).var())
-
-
-def porcentaje_quemado(frame, umbral: int = 250) -> float:
-    """% de píxeles prácticamente clipeados en highlights.
-
-    El brillo medio puede verse normal mientras un 15% de la escena está quemada
-    sin recuperación. Ahí es donde YOLO pierde la textura del objeto.
-    """
-    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-    v = hsv[:, :, 2]
-    return float((v >= umbral).sum() / v.size * 100)
-
-
-def extraer(video_path: Path, out_dir: Path, fps_objetivo: float) -> list[dict]:
+def extraer(video_path: Path, out_dir: Path, fps_objetivo: float) -> tuple[list[dict], dict]:
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
         raise RuntimeError(f"No se pudo abrir el video: {video_path}")
@@ -67,6 +77,15 @@ def extraer(video_path: Path, out_dir: Path, fps_objetivo: float) -> list[dict]:
         raise RuntimeError(
             f"El video no reporta FPS válidos (leído: {fps_video}). "
             "¿Está corrupto o es un formato raro?"
+        )
+
+    if fps_objetivo <= 0:
+        cap.release()
+        raise SystemExit(f"--fps debe ser mayor que 0 (recibido: {fps_objetivo})")
+    if fps_objetivo > fps_video:
+        print(
+            f"Aviso: pediste {fps_objetivo} fps pero el video solo tiene "
+            f"{fps_video:.2f}. Se extraerán todos los frames."
         )
 
     # Cada cuántos frames del video guardamos uno.
@@ -97,9 +116,7 @@ def extraer(video_path: Path, out_dir: Path, fps_objetivo: float) -> list[dict]:
                     "frame": nombre,
                     "indice_video": idx,
                     "segundo": round(segundo, 2),
-                    "brillo_medio": round(brillo_medio(frame), 2),
-                    "nitidez": round(nitidez(frame), 2),
-                    "pct_quemado": round(porcentaje_quemado(frame), 2),
+                    **metricas_opticas(frame),
                 }
             )
             guardados += 1
@@ -112,7 +129,13 @@ def extraer(video_path: Path, out_dir: Path, fps_objetivo: float) -> list[dict]:
         raise RuntimeError("No se extrajo ningún frame. ¿El video está vacío?")
 
     print(f"Guardados: {guardados} frames en {out_dir}")
-    return metadatos
+    contexto = {
+        "resolucion": [ancho, alto],
+        "fps_video": round(fps_video, 3),
+        "paso_frames": paso,
+        "total_frames_video": total_frames,
+    }
+    return metadatos, contexto
 
 
 def main():
@@ -131,12 +154,15 @@ def main():
     if not args.video.exists():
         raise SystemExit(f"No existe el archivo: {args.video}")
 
-    metadatos = extraer(args.video, args.out, args.fps)
+    metadatos, contexto = extraer(args.video, args.out, args.fps)
 
     args.meta.parent.mkdir(parents=True, exist_ok=True)
+    # El contexto del video se guarda para que las afirmaciones del README
+    # ("1920x1080 a 24 fps") tengan respaldo en un artefacto, no en la memoria.
     payload = {
         "video": str(args.video),
         "fps_extraccion": args.fps,
+        **contexto,
         "n_frames": len(metadatos),
         "frames": metadatos,
     }
