@@ -1,6 +1,9 @@
 {
   "modelo": "yolov8n.pt",
   "umbral_conf": 0.25,
+  "imgsz": 640,
+  "ultralytics_version": "8.4.121",
+  "fps_extraccion": 1.0,
   "n_videos": 10,
   "n_frames": 603,
   "n_detecciones_total": 387,

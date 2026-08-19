@@ -21,7 +21,7 @@ import json
 from pathlib import Path
 
 
-def fusionar_detecciones(patron: str, out_path: Path) -> None:
+def fusionar_detecciones(patron: str, out_path: Path, fps_extraccion: float | None = None) -> None:
     archivos = sorted(glob.glob(patron))
     if not archivos:
         raise SystemExit(f"No encontré archivos con el patrón: {patron}")
@@ -29,11 +29,24 @@ def fusionar_detecciones(patron: str, out_path: Path) -> None:
     resultados = []
     total_det = total_frames = total_vacios = 0
     modelo = umbral = None
+    imgsz = d_primero = None
 
     for path in archivos:
         d = json.loads(Path(path).read_text(encoding="utf-8"))
-        video = Path(path).stem.replace("detections_", "")
-        modelo, umbral = d["modelo"], d["umbral_conf"]
+        video = Path(path).stem.removeprefix("detections_")
+        # No sobreescribir en silencio: si un clip se corrió con otro umbral o
+        # con otro modelo, el dataset fusionado mezclaría dos experimentos y el
+        # JSON reportaría los parámetros del último archivo del glob.
+        if modelo is None:
+            modelo, umbral = d["modelo"], d["umbral_conf"]
+            imgsz = d.get("imgsz")
+            d_primero = d
+        elif (d["modelo"], d["umbral_conf"]) != (modelo, umbral):
+            raise SystemExit(
+                f"{path}: modelo/umbral inconsistente con los anteriores "
+                f"({d['modelo']} @ {d['umbral_conf']} vs {modelo} @ {umbral}). "
+                "Vuelve a correr detect.py con los mismos parámetros en todos los clips."
+            )
         for r in d["resultados"]:
             r["video"] = video
             resultados.append(r)
@@ -44,6 +57,9 @@ def fusionar_detecciones(patron: str, out_path: Path) -> None:
     payload = {
         "modelo": modelo,
         "umbral_conf": umbral,
+        "imgsz": imgsz,
+        "ultralytics_version": d_primero.get("ultralytics_version"),
+        "fps_extraccion": fps_extraccion,
         "n_videos": len(archivos),
         "n_frames": total_frames,
         "n_detecciones_total": total_det,
@@ -54,22 +70,31 @@ def fusionar_detecciones(patron: str, out_path: Path) -> None:
     print(f"{len(archivos)} videos -> {out_path} ({total_frames} frames, {total_det} detecciones)")
 
 
-def fusionar_metricas(patron: str, out_path: Path) -> None:
+def fusionar_metricas(patron: str, out_path: Path) -> float | None:
     archivos = sorted(glob.glob(patron))
     if not archivos:
         raise SystemExit(f"No encontré archivos con el patrón: {patron}")
 
     frames = []
+    fps_extraccion = None
     for path in archivos:
         d = json.loads(Path(path).read_text(encoding="utf-8"))
-        video = Path(path).stem.replace("frames_meta_", "")
+        if fps_extraccion is None:
+            fps_extraccion = d.get("fps_extraccion")
+        video = Path(path).stem.removeprefix("frames_meta_")
         for f in d["frames"]:
             f["video"] = video
             frames.append(f)
 
-    payload = {"n_videos": len(archivos), "n_frames": len(frames), "frames": frames}
+    payload = {
+        "n_videos": len(archivos),
+        "fps_extraccion": fps_extraccion,
+        "n_frames": len(frames),
+        "frames": frames,
+    }
     out_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     print(f"{len(archivos)} videos -> {out_path} ({len(frames)} frames)")
+    return fps_extraccion
 
 
 def main():
@@ -80,8 +105,8 @@ def main():
     p.add_argument("--out-meta", type=Path, default=Path("output/frames_meta.json"))
     args = p.parse_args()
 
-    fusionar_detecciones(args.detections_glob, args.out_detections)
-    fusionar_metricas(args.meta_glob, args.out_meta)
+    fps_extraccion = fusionar_metricas(args.meta_glob, args.out_meta)
+    fusionar_detecciones(args.detections_glob, args.out_detections, fps_extraccion)
 
 
 if __name__ == "__main__":
