@@ -1,0 +1,23 @@
+clase,n_detecciones,confianza_media,confianza_std
+car,168,0.403,0.144
+kite,50,0.382,0.09
+train,31,0.465,0.162
+person,23,0.514,0.214
+truck,20,0.369,0.136
+airplane,13,0.305,0.044
+bus,13,0.331,0.054
+broccoli,11,0.414,0.142
+traffic light,11,0.36,0.072
+bench,8,0.4,0.124
+cell phone,6,0.424,0.17
+parking meter,6,0.462,0.132
+potted plant,6,0.296,0.045
+clock,5,0.359,0.068
+boat,4,0.39,0.13
+suitcase,3,0.365,0.13
+toilet,3,0.332,0.019
+sports ball,2,0.318,0.069
+refrigerator,1,0.819,
+sink,1,0.378,
+bird,1,0.322,
+umbrella,1,0.462,
