@@ -80,7 +80,7 @@ drone-vision/
 - [x] `extract.py` — extraer 1 frame por segundo de un video
 - [x] `detect.py` — correr YOLOv8n sobre cada frame, guardar clase, confianza y bounding box
 - [x] Salida: `output/detections.json`
-- [ ] Probarlo con **un solo video corto real de drone** (30–60 segundos)
+- [x] Probarlo con **un solo video corto real de drone** (30–60 segundos) — terminó siendo 10 videos reales, 27s–155s cada uno
 
 **Criterio de terminado:** un comando produce el JSON sin errores.
 
@@ -90,14 +90,14 @@ Aquí termina lo obligatorio. Si el tiempo se acaba, esto ya es publicable.
 
 **Meta:** responder *por qué* falla la detección.
 
-- [ ] `analyze.py` — agregar por clase: cuántos objetos, confianza media, distribución
-- [ ] Cruzar confianza contra condiciones de captura:
-  - **Altitud** (de los metadatos del vuelo si están disponibles, o anotada a mano)
-  - **Hora del día / ángulo del sol**
-  - **Brillo medio del frame** (ya se calcula en `extract.py`)
-  - **Nitidez** (varianza del laplaciano — ya se calcula en `extract.py`)
-- [ ] Gráficas: confianza vs brillo, confianza vs nitidez
-- [ ] Escribir **tres hallazgos concretos** en el README
+- [x] `analyze.py` — agregar por clase: cuántos objetos, confianza media, distribución
+- [x] Cruzar confianza contra condiciones de captura:
+  - [ ] **Altitud** — no disponible en telemetría de este drone, no se anotó a mano
+  - [ ] **Hora del día / ángulo del sol** — pendiente, sí se ve el efecto indirecto en el hallazgo 3 (golden hour → falso positivo "kite")
+  - [x] **Brillo medio del frame** (ya se calcula en `extract.py`)
+  - [x] **Nitidez** (varianza del laplaciano — ya se calcula en `extract.py`)
+- [x] Gráficas: tasa de detección vs brillo, vs nitidez (más confianza vs brillo/nitidez/% quemado)
+- [x] Escribir **tres hallazgos concretos** en el README
 
 **Ejemplos del tipo de hallazgo que se busca:**
 > "La confianza cae 40% cuando el brillo medio del frame supera 200 — sobreexposición en superficies claras."
@@ -107,9 +107,9 @@ Aquí termina lo obligatorio. Si el tiempo se acaba, esto ya es publicable.
 
 ### Fase 3 — opcional, solo si sobra tiempo
 
-- [ ] `report.py` — generar un reporte markdown legible desde las estadísticas
-- [ ] Integrar un LLM para redactar el resumen en lenguaje natural
-- [ ] Automatizar: carpeta vigilada que dispara el pipeline al detectar un video nuevo
+- [x] `report.py` — generar un reporte markdown legible desde las estadísticas
+- [ ] Integrar un LLM para redactar el resumen en lenguaje natural — descartado, agrega costo de API sin aportar al diferenciador del proyecto
+- [ ] Automatizar: carpeta vigilada que dispara el pipeline al detectar un video nuevo — descartado, fuera de alcance para una pieza de portafolio
 
 **Si la Fase 2 no está terminada, no empieces la Fase 3.**
 

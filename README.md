@@ -85,9 +85,10 @@ pip install -r requirements.txt
 python src/extract.py data/raw/your_flight.MP4
 python src/detect.py --annotate
 python src/analyze.py
+python src/report.py
 ```
 
-Output lands in `output/detections.json`, already joined with the per-frame optical metrics, plus `output/stats_frames.csv`, `output/stats_por_clase.csv` and the charts in `output/charts/`.
+Output lands in `output/detections.json`, already joined with the per-frame optical metrics, plus `output/stats_frames.csv`, `output/stats_por_clase.csv`, the charts in `output/charts/`, and a readable `output/report.md` (per-video and per-class breakdown, detection rate by brightness/sharpness bin — the numbers this README's findings are drawn from).
 
 Runs on CPU with `yolov8n.pt`. Weights download automatically on first run.
 
@@ -101,6 +102,7 @@ for f in data/raw/*.MP4; do
 done
 python src/merge.py
 python src/analyze.py
+python src/report.py
 ```
 
 **Options**
